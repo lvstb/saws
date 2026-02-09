@@ -245,7 +245,7 @@ func TestPreservesExistingConfig(t *testing.T) {
 	cleanup := setupTestConfig(t)
 	defer cleanup()
 
-	configPath, _ := ConfigPath()
+	configPath, _ := Path()
 
 	// Write some existing non-saws config
 	existing := `[profile existing-profile]

@@ -15,8 +15,8 @@ const (
 	sawsMarker = "# managed by saws"
 )
 
-// ConfigPath returns the path to the AWS config file.
-func ConfigPath() (string, error) {
+// Path returns the path to the AWS config file.
+func Path() (string, error) {
 	// Respect AWS_CONFIG_FILE env var
 	if p := os.Getenv("AWS_CONFIG_FILE"); p != "" {
 		return p, nil
@@ -94,7 +94,7 @@ func isSawsProfile(sec *ini.Section) bool {
 
 // LoadProfiles reads all SSO profiles from the AWS config file.
 func LoadProfiles() ([]profile.SSOProfile, error) {
-	path, err := ConfigPath()
+	path, err := Path()
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +131,7 @@ func SaveProfile(p profile.SSOProfile) error {
 // SaveProfiles writes multiple SSO profiles to the AWS config file in a single
 // read/write cycle. This is much faster than calling SaveProfile in a loop.
 func SaveProfiles(profiles []profile.SSOProfile) error {
-	path, err := ConfigPath()
+	path, err := Path()
 	if err != nil {
 		return err
 	}
@@ -167,7 +167,7 @@ func SaveProfiles(profiles []profile.SSOProfile) error {
 
 // DeleteProfile removes an SSO profile from the AWS config file.
 func DeleteProfile(name string) error {
-	path, err := ConfigPath()
+	path, err := Path()
 	if err != nil {
 		return err
 	}

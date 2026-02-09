@@ -32,7 +32,6 @@ var AWSRegions = []string{
 
 var (
 	accountIDRegex = regexp.MustCompile(`^\d{12}$`)
-	urlRegex       = regexp.MustCompile(`^https://[a-zA-Z0-9._-]+\.awsapps\.com/start/?$`)
 	urlLooseRegex  = regexp.MustCompile(`^https?://`)
 )
 

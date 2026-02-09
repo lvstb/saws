@@ -16,8 +16,11 @@ import (
 type Shell string
 
 const (
+	// Bash is the bash shell.
 	Bash Shell = "bash"
-	Zsh  Shell = "zsh"
+	// Zsh is the zsh shell.
+	Zsh Shell = "zsh"
+	// Fish is the fish shell.
 	Fish Shell = "fish"
 )
 

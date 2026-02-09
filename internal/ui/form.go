@@ -40,9 +40,7 @@ func RunSSOConnectionForm(defaults *SSOConnection) (*SSOConnection, error) {
 				Description("Your AWS SSO portal URL (ask your IT team if unsure)").
 				Placeholder("https://my-org.awsapps.com/start").
 				Value(&startURL).
-				Validate(func(s string) error {
-					return profile.ValidateStartURL(s)
-				}),
+				Validate(profile.ValidateStartURL),
 
 			huh.NewSelect[string]().
 				Title("SSO Region").

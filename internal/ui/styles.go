@@ -14,61 +14,74 @@ import (
 var Output io.Writer = os.Stdout
 
 var (
-	// Colors
-	ColorPrimary   = lipgloss.Color("#FF9900") // AWS orange
-	ColorSecondary = lipgloss.Color("#232F3E") // AWS dark blue
-	ColorSuccess   = lipgloss.Color("#04B575")
-	ColorError     = lipgloss.Color("#FF4444")
-	ColorWarning   = lipgloss.Color("#FFBB33")
-	ColorMuted     = lipgloss.Color("#626262")
-	ColorWhite     = lipgloss.Color("#FAFAFA")
+	// ColorPrimary is the AWS orange brand color.
+	ColorPrimary = lipgloss.Color("#FF9900")
+	// ColorSecondary is the AWS dark blue brand color.
+	ColorSecondary = lipgloss.Color("#232F3E")
+	// ColorSuccess is used for success messages.
+	ColorSuccess = lipgloss.Color("#04B575")
+	// ColorError is used for error messages.
+	ColorError = lipgloss.Color("#FF4444")
+	// ColorWarning is used for warning messages.
+	ColorWarning = lipgloss.Color("#FFBB33")
+	// ColorMuted is used for secondary/dimmed text.
+	ColorMuted = lipgloss.Color("#626262")
+	// ColorWhite is used for primary text on dark backgrounds.
+	ColorWhite = lipgloss.Color("#FAFAFA")
 
-	// Text styles
+	// TitleStyle is the style for section titles.
 	TitleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(ColorPrimary).
 			MarginBottom(1)
 
+	// SubtitleStyle is the style for subtitle text.
 	SubtitleStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted).
 			Italic(true)
 
+	// SuccessStyle is the style for success messages.
 	SuccessStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(ColorSuccess)
 
+	// ErrorStyle is the style for error messages.
 	ErrorStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(ColorError)
 
+	// WarningStyle is the style for warning messages.
 	WarningStyle = lipgloss.NewStyle().
 			Foreground(ColorWarning)
 
+	// MutedStyle is the style for dimmed/secondary text.
 	MutedStyle = lipgloss.NewStyle().
 			Foreground(ColorMuted)
 
-	// Box styles
+	// BoxStyle is the style for bordered content boxes.
 	BoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(ColorPrimary).
 			Padding(1, 2)
 
+	// CredentialBoxStyle is the style for credential display boxes.
 	CredentialBoxStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(ColorSuccess).
 				Padding(1, 2).
 				MarginTop(1)
 
-	// Key-value display
+	// KeyStyle is the style for key labels in key-value displays.
 	KeyStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(ColorWhite).
 			Width(24)
 
+	// ValueStyle is the style for values in key-value displays.
 	ValueStyle = lipgloss.NewStyle().
 			Foreground(ColorPrimary)
 
-	// Banner
+	// BannerStyle is the style for the ASCII art banner.
 	BannerStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(ColorPrimary).
