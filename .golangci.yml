@@ -1,0 +1,40 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - gosimple
+    - ineffassign
+    - unused
+    - misspell
+    - gocritic
+    - revive
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+        - name: var-naming
+        - name: indent-error-flow
+        - name: blank-imports
+        - name: context-as-argument
+        - name: error-return
+
+    gocritic:
+      enabled-checks:
+        - captLocal
+        - commentFormatting
+        - elseif
+        - ifElseChain
+        - rangeValCopy
+        - singleCaseSwitch
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+        - revive
