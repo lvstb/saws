@@ -12,6 +12,8 @@ A single-binary CLI that authenticates via AWS SSO, discovers all your accounts 
 - Multi-select which accounts/roles to import as named profiles
 - Saves profiles to `~/.aws/config` — standard format, works with AWS CLI
 - Writes temporary credentials to `~/.aws/credentials`
+- Caches SSO tokens in `~/.aws/sso/cache/` so `export AWS_PROFILE=<name>` works with any AWS tool (CLI, SDKs, Terraform, etc.)
+- Reuses cached tokens on subsequent runs — skips browser auth if the token is still valid
 - Exports `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` to your shell
 - Shell wrapper for bash, zsh, and fish
 
@@ -80,7 +82,7 @@ On first run, saws will:
 3. Discover all available accounts and roles
 4. Let you multi-select which to import as profiles
 5. Save them to `~/.aws/config`
-6. Prompt you to select a profile and export credentials
+6. On next run, select a profile and get credentials
 
 ## Usage
 
@@ -127,6 +129,18 @@ Without the wrapper, you can do this manually:
 eval $(saws --export --profile my-account-admin)
 ```
 
+### Using AWS_PROFILE
+
+Since saws populates the SSO token cache, you can skip the shell wrapper and use `AWS_PROFILE` directly:
+
+```sh
+export AWS_PROFILE=my-account-admin
+aws sts get-caller-identity
+terraform plan
+```
+
+All AWS tools (CLI, SDKs, Terraform, boto3) will resolve credentials through the cached SSO token.
+
 ## Config format
 
 saws stores profiles in standard AWS config format:
@@ -141,6 +155,8 @@ sso_role_name = AdministratorAccess
 ```
 
 These profiles are fully compatible with the AWS CLI (`aws --profile my-account-admin`).
+
+saws also writes SSO tokens to `~/.aws/sso/cache/` in standard AWS CLI format. This means `AWS_PROFILE` works with any AWS tool without needing explicit credentials.
 
 ## License
 
