@@ -25,6 +25,56 @@ A single-binary CLI that authenticates via AWS SSO, discovers all your accounts 
 brew install lvstb/tap/saws
 ```
 
+### Nix (NixOS / Linux / macOS)
+
+```sh
+# install in your user profile
+nix profile install github:lvstb/saws
+
+# run without installing
+nix run github:lvstb/saws
+```
+
+#### Flakes (Home Manager or NixOS)
+
+Add the flake input to your `flake.nix`:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable"
+    home-manager.url = "github:nix-community/home-manager"
+    saws.url = "github:lvstb/saws"
+  }
+}
+```
+
+Then add the package in your Home Manager config:
+
+```nix
+{ pkgs, inputs, ... }:
+
+{
+  home.packages = [
+    inputs.saws.packages.${pkgs.system}.default
+  ]
+}
+```
+
+Or in a NixOS module:
+
+```nix
+{ pkgs, inputs, ... }:
+
+{
+  environment.systemPackages = [
+    inputs.saws.packages.${pkgs.system}.default
+  ]
+}
+```
+
+> **Note:** You must pass `inputs` through to your module via `extraSpecialArgs` (Home Manager) or `specialArgs` (NixOS).
+
 ### Go
 
 ```sh
