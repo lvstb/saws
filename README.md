@@ -185,6 +185,38 @@ Without the wrapper, you can do this manually:
 eval $(saws --export --profile my-account-admin)
 ```
 
+### Nix users
+
+`saws init` resolves symlinks and hardcodes the Nix store path, which breaks after updates or garbage collection. Add this snippet to your `~/.zshrc` instead:
+
+```sh
+# >>> saws initialize >>>
+saws() {
+  local SAWS_BIN
+  SAWS_BIN="$(which saws)"
+
+  case "$1" in
+    init|--version|--configure|configure)
+      SAWS_WRAPPER=1 "$SAWS_BIN" "$@"
+      return $?
+      ;;
+  esac
+
+  local export_output
+  export_output="$(SAWS_WRAPPER=1 "$SAWS_BIN" --export "$@")"
+  local exit_code=$?
+
+  if [ $exit_code -eq 0 ]; then
+    eval "$export_output"
+  else
+    SAWS_WRAPPER=1 "$SAWS_BIN" "$@"
+  fi
+}
+# <<< saws initialize <<<
+```
+
+This dynamically resolves the binary path at runtime so it survives Nix updates.
+
 ### Using AWS_PROFILE
 
 Since saws populates the SSO token cache, you can skip the shell wrapper and use `AWS_PROFILE` directly:
