@@ -193,7 +193,7 @@ eval $(saws --export --profile my-account-admin)
 # >>> saws initialize >>>
 saws() {
   local SAWS_BIN
-  SAWS_BIN="$(which saws)"
+  SAWS_BIN="$(command which saws)"
 
   case "$1" in
     init|--version|--configure|configure)
