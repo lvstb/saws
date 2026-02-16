@@ -92,12 +92,13 @@ func GetCredentials(
 }
 
 // FormatExportCommands returns shell export commands for the credentials.
-func FormatExportCommands(creds *AWSCredentials) string {
+func FormatExportCommands(creds *AWSCredentials, profileName string) string {
 	return fmt.Sprintf(
-		"export AWS_ACCESS_KEY_ID=%s\nexport AWS_SECRET_ACCESS_KEY=%s\nexport AWS_SESSION_TOKEN=%s",
+		"export AWS_ACCESS_KEY_ID=%s\nexport AWS_SECRET_ACCESS_KEY=%s\nexport AWS_SESSION_TOKEN=%s\nexport AWS_PROFILE=%s",
 		creds.AccessKeyID,
 		creds.SecretAccessKey,
 		creds.SessionToken,
+		profileName,
 	)
 }
 

@@ -125,12 +125,13 @@ func TestFormatExportCommands(t *testing.T) {
 		Expiration:      time.Now().Add(time.Hour),
 	}
 
-	result := FormatExportCommands(creds)
+	result := FormatExportCommands(creds, "my-profile")
 
 	expected := []string{
 		"export AWS_ACCESS_KEY_ID=AKIAEXAMPLE",
 		"export AWS_SECRET_ACCESS_KEY=SECRETEXAMPLE",
 		"export AWS_SESSION_TOKEN=TOKENEXAMPLE",
+		"export AWS_PROFILE=my-profile",
 	}
 
 	for _, exp := range expected {

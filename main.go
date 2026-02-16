@@ -444,7 +444,7 @@ func exportCredentials(p *profile.SSOProfile, creds *credentials.AWSCredentials)
 
 	// Export mode: export commands on stdout, styled display on stderr
 	if *flagExport {
-		fmt.Println(credentials.FormatExportCommands(creds))
+		fmt.Println(credentials.FormatExportCommands(creds, p.Name))
 		fmt.Fprintln(ui.Output, credentials.FormatDisplay(creds, p.Name))
 		fmt.Fprintln(ui.Output)
 		fmt.Fprintln(ui.Output, ui.SuccessStyle.Render("  Credentials exported to shell environment"))
