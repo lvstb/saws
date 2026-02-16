@@ -29,6 +29,10 @@ var (
 )
 
 func main() {
+	// Initialize styles early so error messages etc. are styled.
+	// In --export mode, run() will reconfigure the renderer and re-init.
+	ui.InitStyles()
+
 	// Handle subcommands before flag parsing
 	if len(os.Args) >= 2 && os.Args[1] == "init" {
 		if err := runInit(os.Args[2:]); err != nil {
@@ -61,6 +65,7 @@ func run() error {
 	if *flagExport {
 		ui.Output = os.Stderr
 		lipgloss.SetDefaultRenderer(lipgloss.NewRenderer(os.Stderr))
+		ui.InitStyles()
 	}
 
 	fmt.Fprint(ui.Output, ui.Banner())
