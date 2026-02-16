@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,18 +13,38 @@ import (
 	"github.com/lvstb/saws/internal/profile"
 )
 
-// substringFilter is a case-insensitive substring filter that replaces the
-// default fuzzy filter. It keeps items whose FilterValue contains the search
-// term and preserves their original order.
-func substringFilter(term string, targets []string) []list.Rank {
-	term = strings.ToLower(term)
-	var ranks []list.Rank
-	for i, t := range targets {
-		if strings.Contains(strings.ToLower(t), term) {
-			ranks = append(ranks, list.Rank{Index: i})
+// matchesFilter returns true if the item's FilterValue contains the term
+// (case-insensitive substring match).
+func matchesFilter(item list.Item, term string) bool {
+	if term == "" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(item.FilterValue()), strings.ToLower(term))
+}
+
+// filterItems returns only items matching the filter term.
+func filterItems(all []list.Item, term string) []list.Item {
+	if term == "" {
+		return all
+	}
+	var out []list.Item
+	for _, item := range all {
+		if matchesFilter(item, term) {
+			out = append(out, item)
 		}
 	}
-	return ranks
+	return out
+}
+
+// isFilterRune returns true for printable characters that should go to the filter.
+func isFilterRune(msg tea.KeyMsg) (rune, bool) {
+	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+		r := msg.Runes[0]
+		if unicode.IsPrint(r) {
+			return r, true
+		}
+	}
+	return 0, false
 }
 
 const (
@@ -41,7 +62,7 @@ const (
 	kindBack
 )
 
-// selectorItem implements list.Item for the fuzzy finder.
+// selectorItem implements list.Item for the profile selector.
 type selectorItem struct {
 	kind    itemKind
 	account *profile.AccountGroup // set for kindAccount
@@ -51,7 +72,6 @@ type selectorItem struct {
 func (i selectorItem) FilterValue() string {
 	switch i.kind {
 	case kindAccount:
-		// Include account name, ID, and profile names so fuzzy search matches broadly
 		parts := ""
 		if i.account.AccountName != "" {
 			parts += i.account.AccountName + " "
@@ -138,32 +158,64 @@ const (
 )
 
 // selectorModel is the bubbletea model for profile selection.
+// It manages its own filter text so that typing filters the list while
+// arrow keys simultaneously navigate the filtered results.
 type selectorModel struct {
-	list     list.Model
-	groups   []profile.AccountGroup
-	level    selectorLevel
-	selected *profile.AccountGroup // the account we drilled into
-	choice   *profile.SSOProfile
-	isNew    bool
-	quitting bool
+	list       list.Model
+	groups     []profile.AccountGroup
+	allItems   []list.Item // unfiltered items for current level
+	filterText string
+	level      selectorLevel
+	selected   *profile.AccountGroup // the account we drilled into
+	choice     *profile.SSOProfile
+	isNew      bool
+	quitting   bool
 }
 
 func (m selectorModel) Init() tea.Cmd {
-	// Start in filtering mode immediately so the user can type to search
-	// without pressing "/" first.
-	return tea.Sequence(
-		func() tea.Msg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}} },
-	)
+	return nil
+}
+
+// applyFilter updates the list items based on the current filter text.
+func (m *selectorModel) applyFilter() {
+	filtered := filterItems(m.allItems, m.filterText)
+	m.list.SetItems(filtered)
+	m.list.Select(0)
+}
+
+// setLevel switches to a new level with the given items and title, clearing the filter.
+func (m *selectorModel) setLevel(level selectorLevel, items []list.Item, title string) {
+	m.level = level
+	m.allItems = items
+	m.filterText = ""
+	m.list.SetItems(items)
+	m.list.Title = title
+	m.list.Select(0)
 }
 
 func (m selectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "enter":
-			// Always select the highlighted item on enter, even while filtering.
-			// This eliminates the "double enter" problem where the first enter
-			// only applies the filter.
+		// Handle filter input: printable runes
+		if r, ok := isFilterRune(msg); ok {
+			// 'q' quits when filter is empty
+			if r == 'q' && m.filterText == "" {
+				m.quitting = true
+				return m, tea.Quit
+			}
+			m.filterText += string(r)
+			m.applyFilter()
+			return m, nil
+		}
+
+		switch msg.Type {
+		case tea.KeyBackspace:
+			if len(m.filterText) > 0 {
+				m.filterText = m.filterText[:len(m.filterText)-1]
+				m.applyFilter()
+				return m, nil
+			}
+		case tea.KeyEnter:
 			item, ok := m.list.SelectedItem().(selectorItem)
 			if !ok {
 				break
@@ -174,32 +226,22 @@ func (m selectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.quitting = true
 				return m, tea.Quit
 			case kindBack:
-				m.level = levelAccounts
 				m.selected = nil
-				m.list.SetItems(m.accountItems())
-				m.list.Title = "Select an AWS Account"
-				m.list.ResetFilter()
-				// Re-enter filtering mode
-				return m, func() tea.Msg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}} }
+				m.setLevel(levelAccounts, m.accountItems(), "Select an AWS Account")
+				return m, nil
 			case kindAccount:
-				// If only one role, auto-select it
 				if len(item.account.Roles) == 1 {
 					p := item.account.Roles[0]
 					m.choice = &p
 					m.quitting = true
 					return m, tea.Quit
 				}
-				// Drill into roles
-				m.level = levelRoles
 				m.selected = item.account
-				m.list.SetItems(m.roleItems(item.account))
 				accountLabel := item.account.AccountID
 				if item.account.AccountName != "" {
 					accountLabel = item.account.AccountName
 				}
-				m.list.Title = fmt.Sprintf("Select a Role — %s", accountLabel)
-				m.list.ResetFilter()
-				m.list.Select(0)
+				m.setLevel(levelRoles, m.roleItems(item.account), fmt.Sprintf("Select a Role — %s", accountLabel))
 				return m, nil
 			case kindRole:
 				p := *item.profile
@@ -207,29 +249,22 @@ func (m selectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.quitting = true
 				return m, tea.Quit
 			}
-		case "esc":
-			// If filtering is active, let the list handle esc to clear filter first
-			if m.list.FilterState() == list.Filtering {
-				break
+		case tea.KeyEscape:
+			// If there's filter text, clear it first
+			if m.filterText != "" {
+				m.filterText = ""
+				m.applyFilter()
+				return m, nil
 			}
-			// If in roles view, go back to accounts instead of quitting
+			// If in roles view, go back to accounts
 			if m.level == levelRoles {
-				m.level = levelAccounts
 				m.selected = nil
-				m.list.SetItems(m.accountItems())
-				m.list.Title = "Select an AWS Account"
-				m.list.ResetFilter()
-				return m, func() tea.Msg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}} }
+				m.setLevel(levelAccounts, m.accountItems(), "Select an AWS Account")
+				return m, nil
 			}
 			m.quitting = true
 			return m, tea.Quit
-		case "q":
-			// Only quit if not filtering (otherwise typing "q" in search)
-			if m.list.FilterState() != list.Filtering {
-				m.quitting = true
-				return m, tea.Quit
-			}
-		case "ctrl+c":
+		case tea.KeyCtrlC:
 			m.quitting = true
 			return m, tea.Quit
 		}
@@ -238,6 +273,7 @@ func (m selectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list.SetHeight(msg.Height - 4)
 	}
 
+	// Pass through to list for arrow key navigation, page up/down, etc.
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
 	return m, cmd
@@ -247,7 +283,30 @@ func (m selectorModel) View() string {
 	if m.quitting {
 		return ""
 	}
-	return "\n" + m.list.View()
+
+	var b strings.Builder
+	b.WriteString("\n")
+
+	// Render filter input line
+	prompt := lipgloss.NewStyle().Foreground(ColorPrimary).Render("> ")
+	cursor := lipgloss.NewStyle().Foreground(ColorPrimary).Render("█")
+	filterStyle := lipgloss.NewStyle().Foreground(ColorWhite)
+
+	if m.filterText != "" {
+		b.WriteString("  " + prompt + filterStyle.Render(m.filterText) + cursor + "\n\n")
+	} else {
+		placeholder := lipgloss.NewStyle().Foreground(ColorMuted).Render("Type to filter...")
+		b.WriteString("  " + prompt + placeholder + "\n\n")
+	}
+
+	b.WriteString(m.list.View())
+
+	// Help line at bottom
+	help := lipgloss.NewStyle().Foreground(ColorMuted).PaddingLeft(2).
+		Render("enter: select  esc: back  q: quit")
+	b.WriteString("\n" + help)
+
+	return b.String()
 }
 
 func (m selectorModel) accountItems() []list.Item {
@@ -274,27 +333,32 @@ type SelectionResult struct {
 	IsNew   bool                // true if user wants to create a new profile
 }
 
-// RunProfileSelector displays a fuzzy-searchable list of profiles,
+// RunProfileSelector displays a searchable list of profiles,
 // grouped by AWS account. Selecting an account expands to show its roles.
+// Typing filters the list; arrow keys navigate simultaneously.
 func RunProfileSelector(profiles []profile.SSOProfile) (*SelectionResult, error) {
 	groups := profile.GroupByAccount(profiles)
 
 	delegate := selectorDelegate{}
-	m := selectorModel{groups: groups, level: levelAccounts}
+	items := make([]list.Item, 0, len(groups)+1)
+	for i := range groups {
+		items = append(items, selectorItem{kind: kindAccount, account: &groups[i]})
+	}
+	items = append(items, selectorItem{kind: kindNew})
 
-	items := m.accountItems()
 	l := list.New(items, delegate, 60, 14)
 	l.Title = "Select an AWS Account"
-	l.Filter = substringFilter
 	l.Styles.Title = TitleStyle
-	l.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(ColorPrimary)
-	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(ColorPrimary)
-	l.SetFilteringEnabled(true)
-	l.SetShowHelp(true)
-	l.SetShowStatusBar(true)
-	l.FilterInput.Placeholder = "Type to filter..."
+	l.SetFilteringEnabled(false)
+	l.SetShowHelp(false)
+	l.SetShowStatusBar(false)
 
-	m.list = l
+	m := selectorModel{
+		list:     l,
+		groups:   groups,
+		allItems: items,
+		level:    levelAccounts,
+	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithOutput(Output))
 	finalModel, err := p.Run()
@@ -337,7 +401,7 @@ func Confirm(message string) (bool, error) {
 // RunProfileImportSelector displays a multi-select list showing all discovered
 // account/role combinations. All are pre-selected by default. The user can
 // toggle items with space, select/deselect all with a/n, and confirm with enter.
-// Uses the same bubbles/list fuzzy-filtering UI as the profile selector.
+// Typing filters the list; arrow keys navigate simultaneously.
 func RunProfileImportSelector(discovered []DiscoveredProfile) ([]DiscoveredProfile, error) {
 	if len(discovered) == 0 {
 		return nil, fmt.Errorf("no profiles to import")
@@ -363,18 +427,15 @@ func RunProfileImportSelector(discovered []DiscoveredProfile) ([]DiscoveredProfi
 
 	delegate := importDelegate{checked: checked}
 	l := list.New(items, delegate, 60, min(len(discovered)*2+6, 20))
-	l.Title = "Select profiles to import  (space: toggle, a: all, n: none)"
-	l.Filter = substringFilter
+	l.Title = "Select profiles to import"
 	l.Styles.Title = TitleStyle
-	l.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(ColorPrimary)
-	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(ColorPrimary)
-	l.SetFilteringEnabled(true)
-	l.SetShowHelp(true)
-	l.SetShowStatusBar(true)
-	l.FilterInput.Placeholder = "Type to filter..."
+	l.SetFilteringEnabled(false)
+	l.SetShowHelp(false)
+	l.SetShowStatusBar(false)
 
 	m := importModel{
 		list:       l,
+		allItems:   items,
 		checked:    checked,
 		discovered: discovered,
 	}
@@ -459,8 +520,12 @@ func (d importDelegate) Render(w io.Writer, m list.Model, index int, listItem li
 }
 
 // importModel is the bubbletea model for multi-select import.
+// Like selectorModel, it manages its own filter so typing and navigation
+// work simultaneously.
 type importModel struct {
 	list       list.Model
+	allItems   []list.Item // unfiltered items
+	filterText string
 	checked    map[int]bool
 	discovered []DiscoveredProfile
 	confirmed  bool
@@ -468,60 +533,76 @@ type importModel struct {
 }
 
 func (m importModel) Init() tea.Cmd {
-	// Start in filtering mode immediately.
-	return tea.Sequence(
-		func() tea.Msg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}} },
-	)
+	return nil
+}
+
+// applyFilter updates the list items based on the current filter text.
+func (m *importModel) applyFilter() {
+	filtered := filterItems(m.allItems, m.filterText)
+	m.list.SetItems(filtered)
+	m.list.Select(0)
 }
 
 func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case " ":
-			// Toggle current item (only when not actively filtering to avoid
-			// interfering with search input — but space in filter is unusual)
-			if m.list.FilterState() != list.Filtering {
-				item, ok := m.list.SelectedItem().(importItem)
-				if ok {
-					m.checked[item.index] = !m.checked[item.index]
+		// Handle filter input: printable runes
+		if r, ok := isFilterRune(msg); ok {
+			switch r {
+			case 'a':
+				if m.filterText == "" {
+					for i := range m.discovered {
+						m.checked[i] = true
+					}
 					m.list.SetDelegate(importDelegate{checked: m.checked})
+					return m, nil
 				}
-				return m, nil
+			case 'n':
+				if m.filterText == "" {
+					for i := range m.discovered {
+						m.checked[i] = false
+					}
+					m.list.SetDelegate(importDelegate{checked: m.checked})
+					return m, nil
+				}
+			case 'q':
+				if m.filterText == "" {
+					m.cancelled = true
+					return m, tea.Quit
+				}
 			}
-		case "a":
-			if m.list.FilterState() != list.Filtering {
-				for i := range m.discovered {
-					m.checked[i] = true
-				}
+			m.filterText += string(r)
+			m.applyFilter()
+			return m, nil
+		}
+
+		switch msg.Type {
+		case tea.KeySpace:
+			// Space toggles checkbox on current item
+			item, ok := m.list.SelectedItem().(importItem)
+			if ok {
+				m.checked[item.index] = !m.checked[item.index]
 				m.list.SetDelegate(importDelegate{checked: m.checked})
+			}
+			return m, nil
+		case tea.KeyBackspace:
+			if len(m.filterText) > 0 {
+				m.filterText = m.filterText[:len(m.filterText)-1]
+				m.applyFilter()
 				return m, nil
 			}
-		case "n":
-			if m.list.FilterState() != list.Filtering {
-				for i := range m.discovered {
-					m.checked[i] = false
-				}
-				m.list.SetDelegate(importDelegate{checked: m.checked})
-				return m, nil
-			}
-		case "enter":
-			// Always confirm on enter, even while filtering
+		case tea.KeyEnter:
 			m.confirmed = true
 			return m, tea.Quit
-		case "q":
-			if m.list.FilterState() != list.Filtering {
-				m.cancelled = true
-				return m, tea.Quit
+		case tea.KeyEscape:
+			if m.filterText != "" {
+				m.filterText = ""
+				m.applyFilter()
+				return m, nil
 			}
-		case "ctrl+c":
 			m.cancelled = true
 			return m, tea.Quit
-		case "esc":
-			// If filtering, let list handle esc to clear filter
-			if m.list.FilterState() == list.Filtering {
-				break
-			}
+		case tea.KeyCtrlC:
 			m.cancelled = true
 			return m, tea.Quit
 		}
@@ -530,6 +611,7 @@ func (m importModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list.SetHeight(msg.Height - 4)
 	}
 
+	// Pass through to list for arrow key navigation
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
 	return m, cmd
@@ -539,6 +621,24 @@ func (m importModel) View() string {
 	if m.confirmed || m.cancelled {
 		return ""
 	}
+
+	var b strings.Builder
+	b.WriteString("\n")
+
+	// Render filter input line
+	prompt := lipgloss.NewStyle().Foreground(ColorPrimary).Render("> ")
+	cursor := lipgloss.NewStyle().Foreground(ColorPrimary).Render("█")
+	filterStyle := lipgloss.NewStyle().Foreground(ColorWhite)
+
+	if m.filterText != "" {
+		b.WriteString("  " + prompt + filterStyle.Render(m.filterText) + cursor + "\n\n")
+	} else {
+		placeholder := lipgloss.NewStyle().Foreground(ColorMuted).Render("Type to filter...")
+		b.WriteString("  " + prompt + placeholder + "\n\n")
+	}
+
+	b.WriteString(m.list.View())
+
 	// Show count of selected items
 	count := 0
 	for _, v := range m.checked {
@@ -547,6 +647,8 @@ func (m importModel) View() string {
 		}
 	}
 	status := lipgloss.NewStyle().Foreground(ColorMuted).PaddingLeft(2).
-		Render(fmt.Sprintf("%d of %d selected — enter to confirm", count, len(m.discovered)))
-	return "\n" + m.list.View() + "\n" + status
+		Render(fmt.Sprintf("%d of %d selected  •  space: toggle  a: all  n: none  enter: confirm", count, len(m.discovered)))
+	b.WriteString("\n" + status)
+
+	return b.String()
 }

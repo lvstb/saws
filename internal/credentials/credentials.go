@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sso"
 	"github.com/lvstb/saws/internal/ui"
@@ -52,8 +53,16 @@ func NewSSOClient(ctx context.Context, region string) (SSOClient, error) {
 }
 
 // NewSSOClientFromConfig creates a real SSO client from a pre-loaded AWS config.
+// It configures adaptive retry mode with up to 10 attempts to handle API rate
+// limiting (HTTP 429) when discovering roles across many accounts.
 func NewSSOClientFromConfig(cfg aws.Config) SSOClient {
-	return sso.NewFromConfig(cfg)
+	return sso.NewFromConfig(cfg, func(o *sso.Options) {
+		o.Retryer = retry.NewAdaptiveMode(func(ao *retry.AdaptiveModeOptions) {
+			ao.StandardOptions = append(ao.StandardOptions, func(so *retry.StandardOptions) {
+				so.MaxAttempts = 10
+			})
+		})
+	})
 }
 
 // GetCredentials fetches temporary AWS credentials for the given account and role.

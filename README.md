@@ -19,6 +19,12 @@ A single-binary CLI that authenticates via AWS SSO, discovers all your accounts 
 
 ## Install
 
+### Homebrew (macOS / Linux)
+
+```sh
+brew install lvstb/tap/saws
+```
+
 ### Go
 
 ```sh

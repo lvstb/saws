@@ -8,6 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/lvstb/saws/internal/auth"
@@ -55,8 +56,11 @@ func run() error {
 
 	// In export mode, redirect all display output to stderr so stdout
 	// stays clean for shell eval. TUI components use ui.Output.
+	// Also set lipgloss renderer to stderr so it detects colors from the
+	// TTY (stderr) rather than the pipe (stdout).
 	if *flagExport {
 		ui.Output = os.Stderr
+		lipgloss.SetDefaultRenderer(lipgloss.NewRenderer(os.Stderr))
 	}
 
 	fmt.Fprint(ui.Output, ui.Banner())
@@ -67,7 +71,24 @@ func run() error {
 		return err
 	}
 
-	// Authenticate via SSO OIDC (if not already done during discovery)
+	// nil profile with nil error means discovery just saved profiles — nothing more to do
+	if p == nil {
+		return nil
+	}
+
+	// If no token yet, check the SSO cache for a valid one
+	if token == nil {
+		if cached := config.ReadSSOCache(p.StartURL); cached != nil {
+			fmt.Fprintln(ui.Output, ui.SuccessStyle.Render("  Using cached SSO token (still valid)"))
+			fmt.Fprintln(ui.Output)
+			token = &auth.TokenResult{
+				AccessToken: cached.AccessToken,
+				ExpiresAt:   cached.ExpiresAt,
+			}
+		}
+	}
+
+	// Authenticate via SSO OIDC if we still don't have a token
 	if token == nil {
 		// Load AWS config once for both auth and credential fetching
 		cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(p.Region))
@@ -80,6 +101,11 @@ func run() error {
 			return err
 		}
 
+		// Cache the token for other AWS tools
+		if cacheErr := config.WriteSSOCache(p.StartURL, p.Region, token.AccessToken, token.ExpiresAt); cacheErr != nil {
+			fmt.Fprintln(os.Stderr, ui.WarningStyle.Render("Warning: could not write SSO cache: "+cacheErr.Error()))
+		}
+
 		// Fetch temporary credentials (reuse same config)
 		creds, err := fetchCredentials(ctx, cfg, p, token)
 		if err != nil {
@@ -89,7 +115,7 @@ func run() error {
 		return exportCredentials(p, creds)
 	}
 
-	// Token came from discovery flow — need a new config for this profile's region
+	// Token came from cache or discovery flow — need a config for this profile's region
 	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(p.Region))
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
@@ -252,6 +278,11 @@ func runDiscoveryFlow(ctx context.Context) (*profile.SSOProfile, *auth.TokenResu
 	fmt.Fprintln(ui.Output, ui.SuccessStyle.Render("  Authentication successful!"))
 	fmt.Fprintln(ui.Output)
 
+	// Cache the token for other AWS tools
+	if cacheErr := config.WriteSSOCache(conn.StartURL, conn.Region, token.AccessToken, token.ExpiresAt); cacheErr != nil {
+		fmt.Fprintln(os.Stderr, ui.WarningStyle.Render("Warning: could not write SSO cache: "+cacheErr.Error()))
+	}
+
 	// Step 3: Discover all accounts
 	ssoClient := credentials.NewSSOClientFromConfig(cfg)
 
@@ -278,7 +309,7 @@ func runDiscoveryFlow(ctx context.Context) (*profile.SSOProfile, *auth.TokenResu
 
 	results := make([]accountRoles, len(discoveredAccounts))
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(10) // max concurrent API calls
+	g.SetLimit(5) // keep below SSO API rate limits
 
 	for i, acct := range discoveredAccounts {
 		results[i].account = acct
@@ -346,24 +377,11 @@ func runDiscoveryFlow(ctx context.Context) (*profile.SSOProfile, *auth.TokenResu
 	fmt.Fprintln(ui.Output)
 	fmt.Fprintln(ui.Output, ui.SuccessStyle.Render(fmt.Sprintf("  Saved %d profile(s) to ~/.aws/config", len(selected))))
 	fmt.Fprintln(ui.Output)
+	fmt.Fprintln(ui.Output, ui.SubtitleStyle.Render("Run saws again to select a profile and log in."))
+	fmt.Fprintln(ui.Output)
 
-	// Step 7: Load saved profiles and let user pick one to use now
-	profiles, err := config.LoadProfiles()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load profiles: %w", err)
-	}
-
-	p, err := selectProfile(profiles)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// If user chose "new" from the selector after just importing, that's odd but handle it
-	if p == nil {
-		return nil, nil, fmt.Errorf("no profile selected")
-	}
-
-	return p, token, nil
+	// Return nil profile + nil error to signal "done, nothing more to do"
+	return nil, nil, nil
 }
 
 // authenticate performs the SSO OIDC device auth flow using a pre-loaded AWS config.
@@ -433,23 +451,20 @@ func exportCredentials(p *profile.SSOProfile, creds *credentials.AWSCredentials)
 	fmt.Fprintln(ui.Output, credentials.FormatDisplay(creds, p.Name))
 	fmt.Fprintln(ui.Output)
 
-	// If not running inside the wrapper, nudge the user
-	if !shell.IsWrapped() {
-		fmt.Fprintln(ui.Output, ui.SubtitleStyle.Render("To auto-export credentials to your shell, run:"))
-		fmt.Fprintln(ui.Output)
-		fmt.Fprintln(ui.Output, ui.MutedStyle.Render("  saws init"))
-		fmt.Fprintln(ui.Output)
-		fmt.Fprintln(ui.Output, ui.SubtitleStyle.Render("Or manually export with:"))
-		fmt.Fprintln(ui.Output)
-		fmt.Fprintln(ui.Output, ui.MutedStyle.Render("  eval $(saws --export --profile "+p.Name+")"))
-	} else {
+	if shell.IsWrapped() {
 		fmt.Fprintln(ui.Output, ui.SuccessStyle.Render("  Credentials exported to shell environment"))
+		fmt.Fprintln(ui.Output)
+		return nil
 	}
 
-	fmt.Fprintln(ui.Output)
-	fmt.Fprintln(ui.Output, ui.SubtitleStyle.Render("Or use the AWS CLI with:"))
+	// Not wrapped: suggest using AWS_PROFILE (works now that SSO cache is populated)
+	fmt.Fprintln(ui.Output, ui.SubtitleStyle.Render("To use this profile in other tools:"))
 	fmt.Fprintln(ui.Output)
 	fmt.Fprintln(ui.Output, ui.MutedStyle.Render("  export AWS_PROFILE="+p.Name))
+	fmt.Fprintln(ui.Output)
+	fmt.Fprintln(ui.Output, ui.SubtitleStyle.Render("Or set up auto-export with:"))
+	fmt.Fprintln(ui.Output)
+	fmt.Fprintln(ui.Output, ui.MutedStyle.Render("  saws init"))
 	fmt.Fprintln(ui.Output)
 
 	return nil
