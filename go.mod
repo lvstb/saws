@@ -7,11 +7,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.9
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.13
-	github.com/charmbracelet/bubbles v0.21.1
+	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/huh v0.8.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
+	golang.org/x/sync v0.19.0
 	gopkg.in/ini.v1 v1.67.1
 )
 
@@ -30,7 +31,7 @@ require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/catppuccin/go v0.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
-	github.com/charmbracelet/x/ansi v0.11.5 // indirect
+	github.com/charmbracelet/x/ansi v0.11.6 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
 	github.com/charmbracelet/x/exp/strings v0.0.0-20240722160745-212f7b056ed0 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
@@ -50,7 +51,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sahilm/fuzzy v0.1.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 )
