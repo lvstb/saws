@@ -4,6 +4,7 @@ package credentials
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -95,10 +96,10 @@ func GetCredentials(
 func FormatExportCommands(creds *AWSCredentials, profileName string) string {
 	return fmt.Sprintf(
 		"export AWS_ACCESS_KEY_ID=%s\nexport AWS_SECRET_ACCESS_KEY=%s\nexport AWS_SESSION_TOKEN=%s\nexport AWS_PROFILE=%s",
-		creds.AccessKeyID,
-		creds.SecretAccessKey,
-		creds.SessionToken,
-		profileName,
+		shellEscape(creds.AccessKeyID),
+		shellEscape(creds.SecretAccessKey),
+		shellEscape(creds.SessionToken),
+		shellEscape(profileName),
 	)
 }
 
@@ -106,7 +107,7 @@ func FormatExportCommands(creds *AWSCredentials, profileName string) string {
 func FormatDisplay(creds *AWSCredentials, profileName string) string {
 	content := ui.FormatKeyValue("Profile:          ", profileName) + "\n" +
 		ui.FormatKeyValue("Access Key ID:    ", creds.AccessKeyID) + "\n" +
-		ui.FormatKeyValue("Secret Access Key:", creds.SecretAccessKey) + "\n" +
+		ui.FormatKeyValue("Secret Access Key:", maskSecret(creds.SecretAccessKey)) + "\n" +
 		ui.FormatKeyValue("Session Token:    ", truncateToken(creds.SessionToken)) + "\n" +
 		ui.FormatKeyValue("Expires:          ", creds.Expiration.Format(time.RFC3339))
 
@@ -119,6 +120,20 @@ func truncateToken(token string) string {
 		return token
 	}
 	return token[:20] + "..." + token[len(token)-20:]
+}
+
+func shellEscape(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func maskSecret(secret string) string {
+	if secret == "" {
+		return "***"
+	}
+	if len(secret) <= 8 {
+		return "***"
+	}
+	return secret[:4] + "***" + secret[len(secret)-4:]
 }
 
 // ListAccounts discovers all AWS accounts accessible with the given SSO token.

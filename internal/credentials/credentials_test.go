@@ -128,16 +128,34 @@ func TestFormatExportCommands(t *testing.T) {
 	result := FormatExportCommands(creds, "my-profile")
 
 	expected := []string{
-		"export AWS_ACCESS_KEY_ID=AKIAEXAMPLE",
-		"export AWS_SECRET_ACCESS_KEY=SECRETEXAMPLE",
-		"export AWS_SESSION_TOKEN=TOKENEXAMPLE",
-		"export AWS_PROFILE=my-profile",
+		"export AWS_ACCESS_KEY_ID='AKIAEXAMPLE'",
+		"export AWS_SECRET_ACCESS_KEY='SECRETEXAMPLE'",
+		"export AWS_SESSION_TOKEN='TOKENEXAMPLE'",
+		"export AWS_PROFILE='my-profile'",
 	}
 
 	for _, exp := range expected {
 		if !strings.Contains(result, exp) {
 			t.Errorf("FormatExportCommands() missing %q\ngot: %s", exp, result)
 		}
+	}
+}
+
+func TestFormatExportCommands_ShellEscapesValues(t *testing.T) {
+	creds := &AWSCredentials{
+		AccessKeyID:     "AKIA'; rm -rf /; echo '",
+		SecretAccessKey: "SECRET",
+		SessionToken:    "TOKEN",
+		Expiration:      time.Now().Add(time.Hour),
+	}
+
+	result := FormatExportCommands(creds, "prod'; touch /tmp/pwned; echo '")
+
+	if !strings.Contains(result, "export AWS_ACCESS_KEY_ID='AKIA'\\''; rm -rf /; echo '\\'''") {
+		t.Fatalf("FormatExportCommands() did not safely escape AccessKeyID: %s", result)
+	}
+	if !strings.Contains(result, "export AWS_PROFILE='prod'\\''; touch /tmp/pwned; echo '\\'''") {
+		t.Fatalf("FormatExportCommands() did not safely escape AWS_PROFILE: %s", result)
 	}
 }
 
@@ -152,10 +170,13 @@ func TestFormatDisplay(t *testing.T) {
 	result := FormatDisplay(creds, "test-profile")
 
 	// Check that key pieces of info are present
-	for _, want := range []string{"AKIAEXAMPLE", "SECRETEXAMPLE", "test-profile", "2026"} {
+	for _, want := range []string{"AKIAEXAMPLE", "test-profile", "2026", "***"} {
 		if !strings.Contains(result, want) {
 			t.Errorf("FormatDisplay() missing %q", want)
 		}
+	}
+	if strings.Contains(result, "SECRETEXAMPLE") {
+		t.Error("FormatDisplay() should not print secret access key in full")
 	}
 }
 

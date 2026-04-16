@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/huh"
 	"github.com/lvstb/saws/internal/profile"
@@ -65,13 +66,33 @@ func RunSSOConnectionForm(defaults *SSOConnection) (*SSOConnection, error) {
 // SuggestProfileName generates a profile name from account and role info.
 // It lowercases and joins with a dash, e.g. "production-administratoraccess".
 func SuggestProfileName(accountName, roleName string) string {
-	name := accountName
+	name := sanitizeProfileSegment(accountName)
 	if name == "" {
 		name = "aws"
 	}
-	name = strings.ToLower(strings.ReplaceAll(name, " ", "-"))
-	role := strings.ToLower(strings.ReplaceAll(roleName, " ", "-"))
+	role := sanitizeProfileSegment(roleName)
+	if role == "" {
+		role = "profile"
+	}
 	return name + "-" + role
+}
+
+func sanitizeProfileSegment(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '.' || r == '_' {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteRune('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 // GenerateUniqueProfileNames generates unique profile names for a list of profiles.
