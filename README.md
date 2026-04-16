@@ -148,6 +148,8 @@ saws init [shell]        # Install shell wrapper (bash/zsh/fish)
 saws --profile <name>    # Use a specific saved profile
 saws --configure         # Force new profile setup (discovery flow)
 saws --export            # Output export commands on stdout (for eval)
+saws --profiles-json     # Output saved profiles as JSON (for desktop app)
+saws --status-json       # Output profile/cache status as JSON (for desktop app)
 saws --version           # Print version
 ```
 
