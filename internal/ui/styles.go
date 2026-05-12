@@ -29,64 +29,87 @@ var (
 	// ColorWhite is used for primary text on dark backgrounds.
 	ColorWhite = lipgloss.Color("#FAFAFA")
 
+	// Style variables — initialized by InitStyles().
+	// These are declared at package level so the rest of the codebase can
+	// reference them, but they MUST NOT use lipgloss.NewStyle() here because
+	// the default renderer may not yet be configured (e.g. in --export mode
+	// stdout is a pipe, so lipgloss detects no color support at init time).
+
 	// TitleStyle is the style for section titles.
-	TitleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(ColorPrimary).
-			MarginBottom(1)
-
+	TitleStyle lipgloss.Style
 	// SubtitleStyle is the style for subtitle text.
-	SubtitleStyle = lipgloss.NewStyle().
-			Foreground(ColorMuted).
-			Italic(true)
-
+	SubtitleStyle lipgloss.Style
 	// SuccessStyle is the style for success messages.
-	SuccessStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(ColorSuccess)
-
+	SuccessStyle lipgloss.Style
 	// ErrorStyle is the style for error messages.
-	ErrorStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(ColorError)
-
+	ErrorStyle lipgloss.Style
 	// WarningStyle is the style for warning messages.
-	WarningStyle = lipgloss.NewStyle().
-			Foreground(ColorWarning)
-
+	WarningStyle lipgloss.Style
 	// MutedStyle is the style for dimmed/secondary text.
-	MutedStyle = lipgloss.NewStyle().
-			Foreground(ColorMuted)
-
+	MutedStyle lipgloss.Style
 	// BoxStyle is the style for bordered content boxes.
-	BoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(ColorPrimary).
-			Padding(1, 2)
-
+	BoxStyle lipgloss.Style
 	// CredentialBoxStyle is the style for credential display boxes.
-	CredentialBoxStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ColorSuccess).
-				Padding(1, 2).
-				MarginTop(1)
-
+	CredentialBoxStyle lipgloss.Style
 	// KeyStyle is the style for key labels in key-value displays.
-	KeyStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(ColorWhite).
-			Width(24)
-
+	KeyStyle lipgloss.Style
 	// ValueStyle is the style for values in key-value displays.
-	ValueStyle = lipgloss.NewStyle().
-			Foreground(ColorPrimary)
-
+	ValueStyle lipgloss.Style
 	// BannerStyle is the style for the ASCII art banner.
-	BannerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(ColorPrimary).
-			MarginBottom(1)
+	BannerStyle lipgloss.Style
 )
+
+// InitStyles (re)initializes all lipgloss styles using the current default
+// renderer. Call this after configuring the lipgloss renderer (e.g. after
+// setting it to stderr in --export mode) and before any style is used.
+func InitStyles() {
+	TitleStyle = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ColorPrimary).
+		MarginBottom(1)
+
+	SubtitleStyle = lipgloss.NewStyle().
+		Foreground(ColorMuted).
+		Italic(true)
+
+	SuccessStyle = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ColorSuccess)
+
+	ErrorStyle = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ColorError)
+
+	WarningStyle = lipgloss.NewStyle().
+		Foreground(ColorWarning)
+
+	MutedStyle = lipgloss.NewStyle().
+		Foreground(ColorMuted)
+
+	BoxStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorPrimary).
+		Padding(1, 2)
+
+	CredentialBoxStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorSuccess).
+		Padding(1, 2).
+		MarginTop(1)
+
+	KeyStyle = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ColorWhite).
+		Width(24)
+
+	ValueStyle = lipgloss.NewStyle().
+		Foreground(ColorPrimary)
+
+	BannerStyle = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ColorPrimary).
+		MarginBottom(1)
+}
 
 // Banner returns the saws ASCII banner.
 func Banner() string {

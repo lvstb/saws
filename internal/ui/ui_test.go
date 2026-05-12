@@ -3,6 +3,7 @@ package ui
 import (
 	"testing"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/lvstb/saws/internal/profile"
 )
 
@@ -276,65 +277,85 @@ func TestRunProfileImportSelector_Empty(t *testing.T) {
 	}
 }
 
-func TestSubstringFilter(t *testing.T) {
-	targets := []string{
-		"Production Admin us-east-1",
-		"Staging ReadOnly eu-west-1",
-		"Pipeline Deploy us-east-1",
-		"Development Admin us-west-2",
+func TestMatchesFilter(t *testing.T) {
+	item := selectorItem{kind: kindRole, profile: &profile.SSOProfile{Name: "dev-admin", RoleName: "AdminAccess"}}
+
+	t.Run("empty term matches everything", func(t *testing.T) {
+		if !matchesFilter(item, "") {
+			t.Error("empty term should match")
+		}
+	})
+
+	t.Run("case insensitive match", func(t *testing.T) {
+		if !matchesFilter(item, "adminaccess") {
+			t.Error("should match case-insensitively")
+		}
+	})
+
+	t.Run("no match", func(t *testing.T) {
+		if matchesFilter(item, "nonexistent") {
+			t.Error("should not match")
+		}
+	})
+}
+
+func TestFilterItems(t *testing.T) {
+	items := []list.Item{
+		importItem{index: 0, accountName: "Production", roleName: "Admin", profileName: "prod-admin", accountID: "111"},
+		importItem{index: 1, accountName: "Staging", roleName: "ReadOnly", profileName: "staging-readonly", accountID: "222"},
+		importItem{index: 2, accountName: "Pipeline", roleName: "Deploy", profileName: "pipeline-deploy", accountID: "333"},
+		importItem{index: 3, accountName: "Development", roleName: "Admin", profileName: "dev-admin", accountID: "444"},
 	}
 
 	t.Run("exact substring match", func(t *testing.T) {
-		ranks := substringFilter("Pipeline", targets)
-		if len(ranks) != 1 {
-			t.Fatalf("got %d matches, want 1", len(ranks))
+		got := filterItems(items, "Pipeline")
+		if len(got) != 1 {
+			t.Fatalf("got %d matches, want 1", len(got))
 		}
-		if ranks[0].Index != 2 {
-			t.Errorf("matched index = %d, want 2", ranks[0].Index)
+		if got[0].(importItem).index != 2 {
+			t.Errorf("matched index = %d, want 2", got[0].(importItem).index)
 		}
 	})
 
 	t.Run("case insensitive", func(t *testing.T) {
-		ranks := substringFilter("pipeline", targets)
-		if len(ranks) != 1 {
-			t.Fatalf("got %d matches, want 1", len(ranks))
-		}
-		if ranks[0].Index != 2 {
-			t.Errorf("matched index = %d, want 2", ranks[0].Index)
+		got := filterItems(items, "pipeline")
+		if len(got) != 1 {
+			t.Fatalf("got %d matches, want 1", len(got))
 		}
 	})
 
 	t.Run("multiple matches", func(t *testing.T) {
-		ranks := substringFilter("admin", targets)
-		if len(ranks) != 2 {
-			t.Fatalf("got %d matches, want 2", len(ranks))
+		got := filterItems(items, "admin")
+		if len(got) != 2 {
+			t.Fatalf("got %d matches, want 2", len(got))
 		}
-		if ranks[0].Index != 0 || ranks[1].Index != 3 {
-			t.Errorf("matched indices = [%d, %d], want [0, 3]", ranks[0].Index, ranks[1].Index)
+		if got[0].(importItem).index != 0 || got[1].(importItem).index != 3 {
+			t.Errorf("matched indices = [%d, %d], want [0, 3]",
+				got[0].(importItem).index, got[1].(importItem).index)
 		}
 	})
 
 	t.Run("no matches", func(t *testing.T) {
-		ranks := substringFilter("nonexistent", targets)
-		if len(ranks) != 0 {
-			t.Fatalf("got %d matches, want 0", len(ranks))
+		got := filterItems(items, "nonexistent")
+		if len(got) != 0 {
+			t.Fatalf("got %d matches, want 0", len(got))
 		}
 	})
 
 	t.Run("empty term matches all", func(t *testing.T) {
-		ranks := substringFilter("", targets)
-		if len(ranks) != len(targets) {
-			t.Fatalf("got %d matches, want %d", len(ranks), len(targets))
+		got := filterItems(items, "")
+		if len(got) != len(items) {
+			t.Fatalf("got %d matches, want %d", len(got), len(items))
 		}
 	})
 
 	t.Run("preserves original order", func(t *testing.T) {
-		ranks := substringFilter("us-east-1", targets)
-		if len(ranks) != 2 {
-			t.Fatalf("got %d matches, want 2", len(ranks))
+		got := filterItems(items, "prod")
+		if len(got) != 1 {
+			t.Fatalf("got %d matches, want 1", len(got))
 		}
-		if ranks[0].Index != 0 || ranks[1].Index != 2 {
-			t.Errorf("matched indices = [%d, %d], want [0, 2]", ranks[0].Index, ranks[1].Index)
+		if got[0].(importItem).index != 0 {
+			t.Errorf("matched index = %d, want 0", got[0].(importItem).index)
 		}
 	})
 }

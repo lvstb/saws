@@ -12,10 +12,68 @@ A single-binary CLI that authenticates via AWS SSO, discovers all your accounts 
 - Multi-select which accounts/roles to import as named profiles
 - Saves profiles to `~/.aws/config` — standard format, works with AWS CLI
 - Writes temporary credentials to `~/.aws/credentials`
+- Caches SSO tokens in `~/.aws/sso/cache/` so `export AWS_PROFILE=<name>` works with any AWS tool (CLI, SDKs, Terraform, etc.)
+- Reuses cached tokens on subsequent runs — skips browser auth if the token is still valid
 - Exports `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` to your shell
 - Shell wrapper for bash, zsh, and fish
 
 ## Install
+
+### Homebrew (macOS / Linux)
+
+```sh
+brew install lvstb/tap/saws
+```
+
+### Nix (NixOS / Linux / macOS)
+
+```sh
+# install in your user profile
+nix profile install github:lvstb/saws
+
+# run without installing
+nix run github:lvstb/saws
+```
+
+#### Flakes (Home Manager or NixOS)
+
+Add the flake input to your `flake.nix`:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable"
+    home-manager.url = "github:nix-community/home-manager"
+    saws.url = "github:lvstb/saws"
+  }
+}
+```
+
+Then add the package in your Home Manager config:
+
+```nix
+{ pkgs, inputs, ... }:
+
+{
+  home.packages = [
+    inputs.saws.packages.${pkgs.system}.default
+  ]
+}
+```
+
+Or in a NixOS module:
+
+```nix
+{ pkgs, inputs, ... }:
+
+{
+  environment.systemPackages = [
+    inputs.saws.packages.${pkgs.system}.default
+  ]
+}
+```
+
+> **Note:** You must pass `inputs` through to your module via `extraSpecialArgs` (Home Manager) or `specialArgs` (NixOS).
 
 ### Go
 
@@ -80,7 +138,7 @@ On first run, saws will:
 3. Discover all available accounts and roles
 4. Let you multi-select which to import as profiles
 5. Save them to `~/.aws/config`
-6. Prompt you to select a profile and export credentials
+6. On next run, select a profile and get credentials
 
 ## Usage
 
@@ -127,6 +185,50 @@ Without the wrapper, you can do this manually:
 eval $(saws --export --profile my-account-admin)
 ```
 
+### Nix users
+
+`saws init` resolves symlinks and hardcodes the Nix store path, which breaks after updates or garbage collection. Add this snippet to your `~/.zshrc` instead:
+
+```sh
+# >>> saws initialize >>>
+saws() {
+  local SAWS_BIN
+  SAWS_BIN="$(command which saws)"
+
+  case "$1" in
+    init|--version|--configure|configure)
+      SAWS_WRAPPER=1 "$SAWS_BIN" "$@"
+      return $?
+      ;;
+  esac
+
+  local export_output
+  export_output="$(SAWS_WRAPPER=1 "$SAWS_BIN" --export "$@")"
+  local exit_code=$?
+
+  if [ $exit_code -eq 0 ]; then
+    eval "$export_output"
+  else
+    SAWS_WRAPPER=1 "$SAWS_BIN" "$@"
+  fi
+}
+# <<< saws initialize <<<
+```
+
+This dynamically resolves the binary path at runtime so it survives Nix updates.
+
+### Using AWS_PROFILE
+
+Since saws populates the SSO token cache, you can skip the shell wrapper and use `AWS_PROFILE` directly:
+
+```sh
+export AWS_PROFILE=my-account-admin
+aws sts get-caller-identity
+terraform plan
+```
+
+All AWS tools (CLI, SDKs, Terraform, boto3) will resolve credentials through the cached SSO token.
+
 ## Config format
 
 saws stores profiles in standard AWS config format:
@@ -141,6 +243,8 @@ sso_role_name = AdministratorAccess
 ```
 
 These profiles are fully compatible with the AWS CLI (`aws --profile my-account-admin`).
+
+saws also writes SSO tokens to `~/.aws/sso/cache/` in standard AWS CLI format. This means `AWS_PROFILE` works with any AWS tool without needing explicit credentials.
 
 ## License
 

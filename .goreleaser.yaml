@@ -15,8 +15,29 @@ builds:
       - arm64
 
 archives:
-  - formats: [binary]
+  - id: binary
+    formats: [binary]
     name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+  - id: tarball
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+brews:
+  - repository:
+      owner: lvstb
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    ids:
+      - tarball
+    name: saws
+    homepage: "https://github.com/lvstb/saws"
+    description: "AWS SSO credentials, without the pain"
+    license: "MIT"
+    install: |
+      bin.install "saws"
+    test: |
+      system "#{bin}/saws", "--version"
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
 
 checksum:
   name_template: "checksums.txt"
