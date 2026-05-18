@@ -19,7 +19,7 @@
           pname = "saws";
           version = "dev";
           src = ./.;
-          vendorHash = "sha256-KD1IFux5FIDMuFCTZeRvW6UhqNS1zSc1uz5kt9NRBis=";
+          vendorHash = "sha256-y+ZL/ZlJjDoI6BCYl7SulWgEXupaA7IxjxzewJHG8mY=";
           ldflags = [
             "-s"
             "-w"
