@@ -43,3 +43,15 @@ jobs:
           go-version-file: go.mod
       - name: Build binary
         run: go build -o saws .
+
+  nix-build:
+    name: Nix build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Build flake
+        run: nix build .#saws --print-build-logs
+      - name: Check flake
+        run: nix flake check --print-build-logs
