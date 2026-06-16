@@ -171,6 +171,8 @@ func TestSuggestProfileName(t *testing.T) {
 		{"with spaces", "My Account", "Power User", "my-account-power-user"},
 		{"empty account name", "", "Admin", "aws-admin"},
 		{"uppercase", "DEV", "ReadOnly", "dev-readonly"},
+		{"special characters sanitized", "Prod; rm -rf /", "Admin$(id)", "prod-rm-rf-admin-id"},
+		{"only punctuation fallback", "!!!", "***", "aws-profile"},
 	}
 
 	for _, tt := range tests {

@@ -223,6 +223,57 @@ func TestWriteCredentials(t *testing.T) {
 	}
 }
 
+func TestSaveProfile_SetsSecureFilePermissions(t *testing.T) {
+	cleanup := setupTestConfig(t)
+	defer cleanup()
+
+	p := profile.SSOProfile{
+		Name:      "secure-profile",
+		StartURL:  "https://test.awsapps.com/start",
+		Region:    "us-east-1",
+		AccountID: "123456789012",
+		RoleName:  "TestRole",
+	}
+
+	if err := SaveProfile(p); err != nil {
+		t.Fatalf("SaveProfile() error = %v", err)
+	}
+
+	configPath, err := Path()
+	if err != nil {
+		t.Fatalf("Path() error = %v", err)
+	}
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatalf("cannot stat config file: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("config file permissions = %o, want 600", got)
+	}
+}
+
+func TestWriteCredentials_SetsSecureFilePermissions(t *testing.T) {
+	cleanup := setupTestConfig(t)
+	defer cleanup()
+
+	err := WriteCredentials("secure-profile", "AKIAIOSFODNN7EXAMPLE", "SECRET", "TOKEN")
+	if err != nil {
+		t.Fatalf("WriteCredentials() error = %v", err)
+	}
+
+	credsPath, err := CredentialsPath()
+	if err != nil {
+		t.Fatalf("CredentialsPath() error = %v", err)
+	}
+	info, err := os.Stat(credsPath)
+	if err != nil {
+		t.Fatalf("cannot stat credentials file: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("credentials file permissions = %o, want 600", got)
+	}
+}
+
 func TestDefaultProfileSectionName(t *testing.T) {
 	if got := sectionName("default"); got != "default" {
 		t.Errorf("sectionName(default) = %q, want %q", got, "default")

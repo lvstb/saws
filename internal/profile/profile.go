@@ -31,8 +31,9 @@ var AWSRegions = []string{
 }
 
 var (
-	accountIDRegex = regexp.MustCompile(`^\d{12}$`)
-	urlLooseRegex  = regexp.MustCompile(`^https?://`)
+	accountIDRegex   = regexp.MustCompile(`^\d{12}$`)
+	urlLooseRegex    = regexp.MustCompile(`^https?://`)
+	profileNameRegex = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 )
 
 // ValidateStartURL checks that the SSO start URL is a valid HTTPS URL.
@@ -74,8 +75,8 @@ func ValidateProfileName(name string) error {
 	if name == "" {
 		return fmt.Errorf("profile name is required")
 	}
-	if strings.ContainsAny(name, "[]") {
-		return fmt.Errorf("profile name cannot contain '[' or ']'")
+	if !profileNameRegex.MatchString(name) {
+		return fmt.Errorf("profile name may only contain letters, numbers, dot, underscore, and dash")
 	}
 	return nil
 }
