@@ -12,7 +12,7 @@ require (
 	github.com/charmbracelet/huh v0.8.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
-	golang.org/x/sync v0.19.0
+	golang.org/x/sync v0.22.0
 	gopkg.in/ini.v1 v1.67.2
 )
 
