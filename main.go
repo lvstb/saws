@@ -9,6 +9,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lvstb/saws/internal/appjson"
+	"github.com/lvstb/saws/internal/appstatus"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/lvstb/saws/internal/auth"
@@ -25,6 +27,8 @@ var (
 	flagProfile   = flag.String("profile", "", "Use a specific saved profile by name")
 	flagConfigure = flag.Bool("configure", false, "Force new profile setup")
 	flagExport    = flag.Bool("export", false, "Output only export commands (for eval)")
+	flagProfilesJSON = flag.Bool("profiles-json", false, "Output saved profiles as JSON")
+	flagStatusJSON   = flag.Bool("status-json", false, "Output current app status as JSON")
 	flagVersion   = flag.Bool("version", false, "Print version and exit")
 )
 
@@ -44,6 +48,22 @@ func main() {
 
 	flag.Parse()
 
+	if *flagProfilesJSON {
+		if err := runProfilesJSON(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if *flagStatusJSON {
+		if err := runStatusJSON(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if *flagVersion {
 		fmt.Printf("saws %s\n", version)
 		os.Exit(0)
@@ -53,6 +73,49 @@ func main() {
 		fmt.Fprintln(os.Stderr, ui.ErrorStyle.Render("Error: "+err.Error()))
 		os.Exit(1)
 	}
+}
+
+func runProfilesJSON() error {
+	profiles, err := config.LoadProfiles()
+	if err != nil {
+		return err
+	}
+
+	out := make([]appjson.Profile, len(profiles))
+	for i, p := range profiles {
+		out[i] = appjson.Profile{
+			Name:        p.Name,
+			AccountName: p.AccountName,
+			AccountID:   p.AccountID,
+			RoleName:    p.RoleName,
+			Region:      p.Region,
+		}
+	}
+
+	data, err := appjson.MarshalProfilesResponse(out)
+	if err != nil {
+		return err
+	}
+	_, err = os.Stdout.Write(data)
+	return err
+}
+
+func runStatusJSON() error {
+	status, err := appstatus.LoadSessionStatus()
+	if err != nil {
+		return err
+	}
+
+	data, err := appjson.MarshalSessionStatusResponse(appjson.SessionStatusPayload{
+		HasProfiles:     status.HasProfiles,
+		SelectedProfile: status.SelectedProfile,
+		CacheExpiresAt:  status.CacheExpiresAt,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = os.Stdout.Write(data)
+	return err
 }
 
 func run() error {

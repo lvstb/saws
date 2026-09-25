@@ -15,6 +15,8 @@ const (
 	sawsMarker = "# managed by saws"
 )
 
+const secureFilePerm = 0o600
+
 // Path returns the path to the AWS config file.
 func Path() (string, error) {
 	// Respect AWS_CONFIG_FILE env var
@@ -142,6 +144,10 @@ func SaveProfiles(profiles []profile.SSOProfile) error {
 	}
 
 	for _, p := range profiles {
+		if err := profile.ValidateProfileName(p.Name); err != nil {
+			return fmt.Errorf("invalid profile name %q: %w", p.Name, err)
+		}
+
 		secName := sectionName(p.Name)
 		sec, err := cfg.NewSection(secName)
 		if err != nil {
@@ -159,10 +165,7 @@ func SaveProfiles(profiles []profile.SSOProfile) error {
 		sec.Key("sso_role_name").SetValue(p.RoleName)
 	}
 
-	if err := ensureDir(path); err != nil {
-		return err
-	}
-	return cfg.SaveTo(path)
+	return saveINI(cfg, path)
 }
 
 // DeleteProfile removes an SSO profile from the AWS config file.
@@ -180,11 +183,15 @@ func DeleteProfile(name string) error {
 	secName := sectionName(name)
 	cfg.DeleteSection(secName)
 
-	return cfg.SaveTo(path)
+	return saveINI(cfg, path)
 }
 
 // WriteCredentials writes temporary credentials to the AWS credentials file.
 func WriteCredentials(profileName, accessKeyID, secretAccessKey, sessionToken string) error {
+	if err := profile.ValidateProfileName(profileName); err != nil {
+		return fmt.Errorf("invalid profile name %q: %w", profileName, err)
+	}
+
 	path, err := CredentialsPath()
 	if err != nil {
 		return err
@@ -205,8 +212,18 @@ func WriteCredentials(profileName, accessKeyID, secretAccessKey, sessionToken st
 	sec.Key("aws_secret_access_key").SetValue(secretAccessKey)
 	sec.Key("aws_session_token").SetValue(sessionToken)
 
+	return saveINI(cfg, path)
+}
+
+func saveINI(cfg *ini.File, path string) error {
 	if err := ensureDir(path); err != nil {
 		return err
 	}
-	return cfg.SaveTo(path)
+	if err := cfg.SaveTo(path); err != nil {
+		return err
+	}
+	if err := os.Chmod(path, secureFilePerm); err != nil {
+		return fmt.Errorf("cannot set secure permissions on %s: %w", path, err)
+	}
+	return nil
 }

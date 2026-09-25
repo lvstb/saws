@@ -82,9 +82,12 @@ func TestValidateProfileName(t *testing.T) {
 		wantErr bool
 	}{
 		{"valid simple name", "my-profile", false},
+		{"valid mixed characters", "Team_Prod.v2", false},
 		{"valid default", "default", false},
 		{"empty string", "", true},
 		{"contains bracket", "my[profile]", true},
+		{"contains whitespace", "my profile", true},
+		{"contains shell metacharacter", "prod;rm", true},
 		{"whitespace only", "   ", true},
 	}
 
