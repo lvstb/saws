@@ -214,3 +214,113 @@ func TestIsSlowDown(t *testing.T) {
 		t.Error("expected false for AuthorizationPendingException")
 	}
 }
+
+func TestAuthenticate_RequestsRefreshableToken(t *testing.T) {
+	var gotScopes []string
+	mock := &mockOIDCClient{
+		registerFunc: func(ctx context.Context, params *ssooidc.RegisterClientInput, optFns ...func(*ssooidc.Options)) (*ssooidc.RegisterClientOutput, error) {
+			gotScopes = params.Scopes
+			return &ssooidc.RegisterClientOutput{
+				ClientId:              aws.String("cid"),
+				ClientSecret:          aws.String("csecret"),
+				ClientSecretExpiresAt: 2000000000,
+			}, nil
+		},
+		createToken: func(ctx context.Context, params *ssooidc.CreateTokenInput, optFns ...func(*ssooidc.Options)) (*ssooidc.CreateTokenOutput, error) {
+			return &ssooidc.CreateTokenOutput{
+				AccessToken:  aws.String("access"),
+				RefreshToken: aws.String("refresh"),
+				ExpiresIn:    3600,
+			}, nil
+		},
+	}
+
+	token, err := Authenticate(context.Background(), mock, "https://test.awsapps.com/start",
+		func(info DeviceAuthInfo) {}, func(status string) {})
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
+	}
+
+	if len(gotScopes) != 1 || gotScopes[0] != "sso:account:access" {
+		t.Errorf("RegisterClient scopes = %v, want [sso:account:access]", gotScopes)
+	}
+	if token.RefreshToken != "refresh" {
+		t.Errorf("RefreshToken = %q, want %q", token.RefreshToken, "refresh")
+	}
+	if token.ClientID != "cid" || token.ClientSecret != "csecret" {
+		t.Errorf("client = %q/%q, want cid/csecret", token.ClientID, token.ClientSecret)
+	}
+	if !token.RegistrationExpiresAt.Equal(time.Unix(2000000000, 0)) {
+		t.Errorf("RegistrationExpiresAt = %v, want %v", token.RegistrationExpiresAt, time.Unix(2000000000, 0))
+	}
+}
+
+func TestRefresh_Success(t *testing.T) {
+	var got *ssooidc.CreateTokenInput
+	mock := &mockOIDCClient{
+		createToken: func(ctx context.Context, params *ssooidc.CreateTokenInput, optFns ...func(*ssooidc.Options)) (*ssooidc.CreateTokenOutput, error) {
+			got = params
+			return &ssooidc.CreateTokenOutput{
+				AccessToken:  aws.String("new-access"),
+				RefreshToken: aws.String("new-refresh"),
+				ExpiresIn:    3600,
+			}, nil
+		},
+	}
+	regExpiry := time.Now().Add(24 * time.Hour)
+	prev := TokenResult{
+		RefreshToken:          "old-refresh",
+		ClientID:              "cid",
+		ClientSecret:          "csecret",
+		RegistrationExpiresAt: regExpiry,
+	}
+
+	token, err := Refresh(context.Background(), mock, prev)
+	if err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	if aws.ToString(got.GrantType) != "refresh_token" {
+		t.Errorf("GrantType = %q, want refresh_token", aws.ToString(got.GrantType))
+	}
+	if aws.ToString(got.RefreshToken) != "old-refresh" || aws.ToString(got.ClientId) != "cid" || aws.ToString(got.ClientSecret) != "csecret" {
+		t.Errorf("unexpected CreateToken input: %+v", got)
+	}
+	if token.AccessToken != "new-access" || token.RefreshToken != "new-refresh" {
+		t.Errorf("tokens = %q/%q, want new-access/new-refresh", token.AccessToken, token.RefreshToken)
+	}
+	if token.ClientID != "cid" || token.ClientSecret != "csecret" || !token.RegistrationExpiresAt.Equal(regExpiry) {
+		t.Errorf("client registration not carried over: %+v", token)
+	}
+	if time.Until(token.ExpiresAt) < 59*time.Minute {
+		t.Errorf("ExpiresAt = %v, want ~1h from now", token.ExpiresAt)
+	}
+}
+
+func TestRefresh_KeepsRefreshTokenWhenNotRotated(t *testing.T) {
+	mock := &mockOIDCClient{
+		createToken: func(ctx context.Context, params *ssooidc.CreateTokenInput, optFns ...func(*ssooidc.Options)) (*ssooidc.CreateTokenOutput, error) {
+			return &ssooidc.CreateTokenOutput{AccessToken: aws.String("new-access"), ExpiresIn: 3600}, nil
+		},
+	}
+
+	token, err := Refresh(context.Background(), mock, TokenResult{RefreshToken: "old-refresh", ClientID: "cid", ClientSecret: "csecret"})
+	if err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if token.RefreshToken != "old-refresh" {
+		t.Errorf("RefreshToken = %q, want old-refresh", token.RefreshToken)
+	}
+}
+
+func TestRefresh_Fails(t *testing.T) {
+	mock := &mockOIDCClient{
+		createToken: func(ctx context.Context, params *ssooidc.CreateTokenInput, optFns ...func(*ssooidc.Options)) (*ssooidc.CreateTokenOutput, error) {
+			return nil, fmt.Errorf("InvalidGrantException: refresh token expired")
+		},
+	}
+
+	if _, err := Refresh(context.Background(), mock, TokenResult{RefreshToken: "r", ClientID: "c", ClientSecret: "s"}); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}

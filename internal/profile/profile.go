@@ -15,6 +15,16 @@ type SSOProfile struct {
 	AccountID   string `ini:"sso_account_id"`
 	AccountName string `ini:"sso_account_name"` // human-friendly account alias
 	RoleName    string `ini:"sso_role_name"`
+	SessionName string `ini:"sso_session"` // empty for legacy profiles without an [sso-session]
+}
+
+// CacheKey returns the key of this profile's entry in ~/.aws/sso/cache.
+// The AWS SDKs key sso-session tokens by session name and legacy tokens by start URL.
+func (p *SSOProfile) CacheKey() string {
+	if p.SessionName != "" {
+		return p.SessionName
+	}
+	return p.StartURL
 }
 
 // AWSRegions is the list of valid AWS regions for selection.

@@ -29,6 +29,10 @@ const (
 	clientName = "saws-cli"
 	clientType = "public"
 	grantType  = "urn:ietf:params:oauth:grant-type:device_code"
+
+	refreshGrantType = "refresh_token"
+	// accessScope makes CreateToken also return a refresh token.
+	accessScope = "sso:account:access"
 )
 
 // OIDCClient defines the interface for SSO OIDC operations (for testability).
@@ -38,10 +42,15 @@ type OIDCClient interface {
 	CreateToken(ctx context.Context, params *ssooidc.CreateTokenInput, optFns ...func(*ssooidc.Options)) (*ssooidc.CreateTokenOutput, error)
 }
 
-// TokenResult holds the access token obtained from SSO OIDC.
+// TokenResult holds the access token obtained from SSO OIDC, plus the refresh
+// token and client registration needed to renew it without a browser login.
 type TokenResult struct {
-	AccessToken string
-	ExpiresAt   time.Time
+	AccessToken           string
+	ExpiresAt             time.Time
+	RefreshToken          string
+	ClientID              string
+	ClientSecret          string
+	RegistrationExpiresAt time.Time
 }
 
 // DeviceAuthInfo holds information displayed to the user during authorization.
@@ -86,6 +95,7 @@ func Authenticate(
 	registerOut, err := client.RegisterClient(ctx, &ssooidc.RegisterClientInput{
 		ClientName: aws.String(clientName),
 		ClientType: aws.String(clientType),
+		Scopes:     []string{accessScope},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to register client: %w", err)
@@ -181,10 +191,37 @@ func pollForToken(
 
 		expiresAt := time.Now().Add(time.Duration(tokenOut.ExpiresIn) * time.Second)
 		return &TokenResult{
-			AccessToken: aws.ToString(tokenOut.AccessToken),
-			ExpiresAt:   expiresAt,
+			AccessToken:           aws.ToString(tokenOut.AccessToken),
+			ExpiresAt:             expiresAt,
+			RefreshToken:          aws.ToString(tokenOut.RefreshToken),
+			ClientID:              aws.ToString(register.ClientId),
+			ClientSecret:          aws.ToString(register.ClientSecret),
+			RegistrationExpiresAt: time.Unix(register.ClientSecretExpiresAt, 0),
 		}, nil
 	}
+}
+
+// Refresh exchanges prev's refresh token for a new access token without user
+// interaction. The client registration from prev is carried over, and so is the
+// refresh token if the service does not rotate it.
+func Refresh(ctx context.Context, client OIDCClient, prev TokenResult) (*TokenResult, error) {
+	tokenOut, err := client.CreateToken(ctx, &ssooidc.CreateTokenInput{
+		ClientId:     aws.String(prev.ClientID),
+		ClientSecret: aws.String(prev.ClientSecret),
+		RefreshToken: aws.String(prev.RefreshToken),
+		GrantType:    aws.String(refreshGrantType),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to refresh token: %w", err)
+	}
+
+	result := prev
+	result.AccessToken = aws.ToString(tokenOut.AccessToken)
+	result.ExpiresAt = time.Now().Add(time.Duration(tokenOut.ExpiresIn) * time.Second)
+	if rt := aws.ToString(tokenOut.RefreshToken); rt != "" {
+		result.RefreshToken = rt
+	}
+	return &result, nil
 }
 
 func isAuthPending(err error) bool {

@@ -70,6 +70,14 @@ func run() error {
 
 	fmt.Fprint(ui.Output, ui.Banner())
 
+	// Upgrade saws-managed legacy profiles so other AWS tools can refresh tokens too
+	if n, err := config.MigrateLegacyProfiles(); err != nil {
+		fmt.Fprintln(os.Stderr, ui.WarningStyle.Render("Warning: could not upgrade profiles to sso-session format: "+err.Error()))
+	} else if n > 0 {
+		fmt.Fprintln(ui.Output, ui.MutedStyle.Render(fmt.Sprintf("  Upgraded %d profile(s) to the sso-session format", n)))
+		fmt.Fprintln(ui.Output)
+	}
+
 	// Determine which profile to use
 	p, token, err := resolveProfile(ctx)
 	if err != nil {
@@ -83,7 +91,7 @@ func run() error {
 
 	// If no token yet, check the SSO cache for a valid one
 	if token == nil {
-		if cached := config.ReadSSOCache(p.StartURL); cached != nil {
+		if cached := config.ReadSSOCache(p.CacheKey()); cached != nil {
 			fmt.Fprintln(ui.Output, ui.SuccessStyle.Render("  Using cached SSO token (still valid)"))
 			fmt.Fprintln(ui.Output)
 			token = &auth.TokenResult{
@@ -91,6 +99,11 @@ func run() error {
 				ExpiresAt:   cached.ExpiresAt,
 			}
 		}
+	}
+
+	// Access token expired: try to renew it silently with the cached refresh token
+	if token == nil {
+		token = refreshCachedToken(ctx, p)
 	}
 
 	// Authenticate via SSO OIDC if we still don't have a token
@@ -107,9 +120,7 @@ func run() error {
 		}
 
 		// Cache the token for other AWS tools
-		if cacheErr := config.WriteSSOCache(p.StartURL, p.Region, token.AccessToken, token.ExpiresAt); cacheErr != nil {
-			fmt.Fprintln(os.Stderr, ui.WarningStyle.Render("Warning: could not write SSO cache: "+cacheErr.Error()))
-		}
+		cacheToken(p.CacheKey(), p.StartURL, p.Region, token)
 
 		// Fetch temporary credentials (reuse same config)
 		creds, err := fetchCredentials(ctx, cfg, p, token)
@@ -283,10 +294,12 @@ func runDiscoveryFlow(ctx context.Context) (*profile.SSOProfile, *auth.TokenResu
 	fmt.Fprintln(ui.Output, ui.SuccessStyle.Render("  Authentication successful!"))
 	fmt.Fprintln(ui.Output)
 
-	// Cache the token for other AWS tools
-	if cacheErr := config.WriteSSOCache(conn.StartURL, conn.Region, token.AccessToken, token.ExpiresAt); cacheErr != nil {
-		fmt.Fprintln(os.Stderr, ui.WarningStyle.Render("Warning: could not write SSO cache: "+cacheErr.Error()))
+	// Cache the token for other AWS tools, under the session name the profiles will use
+	cacheKey, err := config.SessionName(conn.StartURL)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read AWS config: %w", err)
 	}
+	cacheToken(cacheKey, conn.StartURL, conn.Region, token)
 
 	// Step 3: Discover all accounts
 	ssoClient := credentials.NewSSOClientFromConfig(cfg)
@@ -417,6 +430,54 @@ func authenticate(ctx context.Context, cfg aws.Config, p *profile.SSOProfile) (*
 	fmt.Fprintln(ui.Output, ui.SuccessStyle.Render("  Authentication successful!"))
 	fmt.Fprintln(ui.Output)
 	return token, nil
+}
+
+// refreshCachedToken renews the access token using the refresh token in the SSO
+// cache. Returns nil if there is nothing to refresh or the refresh fails, in which
+// case the caller falls back to the browser login.
+func refreshCachedToken(ctx context.Context, p *profile.SSOProfile) *auth.TokenResult {
+	cached := config.ReadRefreshableSSOCache(p.CacheKey())
+	if cached == nil {
+		return nil
+	}
+
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(p.Region))
+	if err != nil {
+		return nil
+	}
+
+	token, err := auth.Refresh(ctx, auth.NewOIDCClientFromConfig(cfg), auth.TokenResult{
+		RefreshToken:          cached.RefreshToken,
+		ClientID:              cached.ClientID,
+		ClientSecret:          cached.ClientSecret,
+		RegistrationExpiresAt: cached.RegistrationExpiresAt,
+	})
+	if err != nil {
+		fmt.Fprintln(ui.Output, ui.MutedStyle.Render("  Could not refresh SSO token, logging in again"))
+		return nil
+	}
+
+	fmt.Fprintln(ui.Output, ui.SuccessStyle.Render("  Refreshed SSO token"))
+	fmt.Fprintln(ui.Output)
+	cacheToken(p.CacheKey(), p.StartURL, p.Region, token)
+	return token
+}
+
+// cacheToken writes the token to the standard AWS SSO cache, warning on failure.
+func cacheToken(cacheKey, startURL, region string, token *auth.TokenResult) {
+	err := config.WriteSSOCache(cacheKey, config.SSOToken{
+		StartURL:              startURL,
+		Region:                region,
+		AccessToken:           token.AccessToken,
+		ExpiresAt:             token.ExpiresAt,
+		RefreshToken:          token.RefreshToken,
+		ClientID:              token.ClientID,
+		ClientSecret:          token.ClientSecret,
+		RegistrationExpiresAt: token.RegistrationExpiresAt,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, ui.WarningStyle.Render("Warning: could not write SSO cache: "+err.Error()))
+	}
 }
 
 // fetchCredentials retrieves temporary AWS credentials using a pre-loaded AWS config.

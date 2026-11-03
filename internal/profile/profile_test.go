@@ -302,3 +302,15 @@ func TestAccountGroup_DisplayName(t *testing.T) {
 		}
 	})
 }
+
+func TestSSOProfile_CacheKey(t *testing.T) {
+	p := SSOProfile{StartURL: "https://test.awsapps.com/start"}
+	if got := p.CacheKey(); got != p.StartURL {
+		t.Errorf("legacy CacheKey() = %q, want start URL %q", got, p.StartURL)
+	}
+
+	p.SessionName = "corp"
+	if got := p.CacheKey(); got != "corp" {
+		t.Errorf("sso-session CacheKey() = %q, want %q", got, "corp")
+	}
+}

@@ -14,6 +14,7 @@ A single-binary CLI that authenticates via AWS SSO, discovers all your accounts 
 - Writes temporary credentials to `~/.aws/credentials`
 - Caches SSO tokens in `~/.aws/sso/cache/` so `export AWS_PROFILE=<name>` works with any AWS tool (CLI, SDKs, Terraform, etc.)
 - Reuses cached tokens on subsequent runs — skips browser auth if the token is still valid
+- Silently renews expired tokens with the SSO refresh token — the browser is only needed again when your SSO session ends
 - Exports `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` to your shell
 - Shell wrapper for bash, zsh, and fish
 
@@ -227,24 +228,30 @@ aws sts get-caller-identity
 terraform plan
 ```
 
-All AWS tools (CLI, SDKs, Terraform, boto3) will resolve credentials through the cached SSO token.
+All AWS tools (CLI, SDKs, Terraform, boto3) will resolve credentials through the cached SSO token, and refresh it themselves until your SSO session ends.
 
 ## Config format
 
-saws stores profiles in standard AWS config format:
+saws stores profiles in the standard AWS config `sso-session` format, with one session per start URL:
 
 ```ini
-[profile my-account-admin]
+[sso-session mycompany]
 sso_start_url = https://mycompany.awsapps.com/start
 sso_region = us-east-1
+sso_registration_scopes = sso:account:access
+
+[profile my-account-admin]
+sso_session = mycompany
 sso_account_id = 123456789012
 sso_account_name = my-account
 sso_role_name = AdministratorAccess
 ```
 
-These profiles are fully compatible with the AWS CLI (`aws --profile my-account-admin`).
+These profiles are fully compatible with the AWS CLI (`aws --profile my-account-admin`, `aws sso login --sso-session mycompany`). If an `[sso-session]` for your start URL already exists, saws reuses it.
 
-saws also writes SSO tokens to `~/.aws/sso/cache/` in standard AWS CLI format. This means `AWS_PROFILE` works with any AWS tool without needing explicit credentials.
+saws also writes SSO tokens, including the refresh token, to `~/.aws/sso/cache/` in standard AWS CLI format. This means `AWS_PROFILE` works with any AWS tool without needing explicit credentials, and those tools can refresh the token on their own.
+
+Profiles created by older saws versions (with `sso_start_url` directly on the profile) are upgraded automatically the next time you run saws. Legacy profiles you wrote yourself are left as they are.
 
 ## License
 
